@@ -1,0 +1,13 @@
+## Interface: 120001
+## Title: Platy Range Fade
+## Notes: Fades OOR hostile nameplates. Plugs inti Platy
+## Author: Klik
+## Version: 1.0.0
+## SavedVariables: PLATY_RANGE_FADE_DB
+## OptionalDeps: Platynator
+## Category: Unit Frames
+
+Config.lua
+Core.lua
+UI.lua
+Debug.lua
