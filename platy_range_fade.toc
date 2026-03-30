@@ -6,6 +6,7 @@
 ## SavedVariables: PLATY_RANGE_FADE_DB
 ## OptionalDeps: Platynator
 ## Category: Unit Frames
+## X-Wago-ID: mNw7m5No
 
 Config.lua
 Core.lua
