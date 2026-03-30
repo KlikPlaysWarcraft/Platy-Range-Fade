@@ -1,0 +1,8 @@
+package-as: platy_range_fade
+
+ignore:
+  - .pkgmeta
+  - README.md
+  - LICENSE.md
+  - Readme.txt
+  - .github
