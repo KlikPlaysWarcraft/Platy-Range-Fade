@@ -1,107 +1,114 @@
----@class PRF_Namespace
+-- Fadey/Core/Debug.lua
+-- Scrollable, copy-pasteable debug log window.
+-- Rule: NEVER use print() for debug output.
+
 local addonName, ns = ...
 
--- ============================================================
---  Debug log (stored in SavedVariables so logs survive /reload)
--- ============================================================
-local MAX_LOG_ENTRIES = 500
+local LOG_MAX = 1000
 
--- ns.PRF_Log is called from Core.lua and UI.lua.
--- Before DB is initialized this is a no-op (rare, only during load).
-function ns.PRF_Log(msg)
-	local db = ns.DB
-	if not db then return end
+-- The log lives on the saved-variable table once DB is ready,
+-- but we buffer here during early load so nothing is lost.
+local earlyBuffer = {}
+local dbReady = false
 
-	if not db.debugLog then db.debugLog = {} end
-	local entry = date("%H:%M:%S") .. "  " .. tostring(msg)
-	table.insert(db.debugLog, entry)
-	while #db.debugLog > MAX_LOG_ENTRIES do
-		table.remove(db.debugLog, 1)
+local function timestamp()
+	return date("%H:%M:%S")
+end
+
+--- Write a line to the debug log.
+--- Safe to call at any time, including before ADDON_LOADED.
+function ns.DebugLog(msg)
+	local entry = timestamp() .. "  " .. tostring(msg)
+	if dbReady and FadeyDB then
+		table.insert(FadeyDB.debugLog, entry)
+		while #FadeyDB.debugLog > LOG_MAX do
+			table.remove(FadeyDB.debugLog, 1)
+		end
+	else
+		table.insert(earlyBuffer, entry)
 	end
 end
 
--- ============================================================
---  Debug window (lazy-created, opened via /prf debug)
--- ============================================================
-local debugFrame = nil
+--- Called by DB.lua after FadeyDB is initialised to flush the early buffer.
+function ns.DebugFlushBuffer()
+	dbReady = true
+	if FadeyDB then
+		for _, entry in ipairs(earlyBuffer) do
+			table.insert(FadeyDB.debugLog, entry)
+		end
+		while #FadeyDB.debugLog > LOG_MAX do
+			table.remove(FadeyDB.debugLog, 1)
+		end
+	end
+	earlyBuffer = {}
+end
 
-local function CreateDebugWindow()
-	local frame = CreateFrame("Frame", "PlatyRangeFadeDebug", UIParent, "BasicFrameTemplateWithInset")
-	frame:SetSize(620, 420)
-	frame:SetPoint("CENTER", 0, -60)
+-- ── Window ───────────────────────────────────────────────────────────────────
+
+local debugWindow
+
+local function BuildDebugWindow()
+	local frame = CreateFrame("Frame", "FadeyDebugFrame", UIParent, "BasicFrameTemplateWithInset")
+	frame:SetSize(640, 420)
+	frame:SetPoint("CENTER")
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
 	frame:SetScript("OnDragStart", frame.StartMoving)
 	frame:SetScript("OnDragStop",  frame.StopMovingOrSizing)
-	frame:SetToplevel(true)
-	frame:Hide()
+	frame:SetClampedToScreen(true)
 
-	tinsert(UISpecialFrames, "PlatyRangeFadeDebug")
-
-	frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	frame.title:SetPoint("TOPLEFT", frame.TitleBg, "TOPLEFT", 5, -3)
-	frame.title:SetText("Platy Range Fade — Debug Log")
-
-	-- Instruction text
-	local hint = frame.Inset:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	hint:SetPoint("TOPLEFT", frame.Inset, "TOPLEFT", 6, -4)
-	hint:SetText("Click inside the box → Ctrl+A → Ctrl+C to copy all entries.")
-	hint:SetTextColor(0.7, 0.7, 0.7)
-
-	-- Clear button
-	local clearBtn = CreateFrame("Button", nil, frame.Inset, "UIPanelButtonTemplate")
-	clearBtn:SetPoint("TOPRIGHT", frame.Inset, "TOPRIGHT", -4, -2)
-	clearBtn:SetSize(60, 22)
-	clearBtn:SetText("Clear")
-	clearBtn:SetScript("OnClick", function()
-		if ns.DB and ns.DB.debugLog then
-			wipe(ns.DB.debugLog)
-		end
-		frame.editBox:SetText("")
-	end)
+	-- Title
+	frame.TitleText:SetText("Fadey — Debug Log")
 
 	-- Scroll frame
-	local sf = CreateFrame("ScrollFrame", nil, frame.Inset, "UIPanelScrollFrameTemplate")
-	sf:SetPoint("TOPLEFT",     frame.Inset, "TOPLEFT",     4,  -24)
-	sf:SetPoint("BOTTOMRIGHT", frame.Inset, "BOTTOMRIGHT", -26,  4)
+	local sf = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+	sf:SetPoint("TOPLEFT",     frame, "TOPLEFT",  12, -36)
+	sf:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -30, 8)
 
-	-- EditBox inside scroll frame (multi-line, selectable, read-only feel).
-	-- Width is set explicitly; GetWidth() returns 0 before first layout.
+	-- EditBox (multi-line, read-only feel — user can select-all and copy)
 	local eb = CreateFrame("EditBox", nil, sf)
 	eb:SetMultiLine(true)
 	eb:SetFontObject(GameFontHighlightSmall)
-	eb:SetWidth(560)   -- 620 frame - scrollbar - inset padding
+	eb:SetWidth(sf:GetWidth())
 	eb:SetAutoFocus(false)
 	eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-	-- Keep the editbox at least as wide as the scroll frame once it sizes
-	sf:SetScript("OnSizeChanged", function(self)
-		eb:SetWidth(self:GetWidth())
-	end)
 	sf:SetScrollChild(eb)
 	frame.editBox = eb
-	frame.scrollFrame = sf  -- keep reference for scroll-to-bottom
 
-	-- Refresh content every time the window is shown
-	frame:SetScript("OnShow", function(self)
-		local log = (ns.DB and ns.DB.debugLog) or {}
-		self.editBox:SetText(table.concat(log, "\n"))
-		-- Scroll to bottom so newest entries are visible
-		C_Timer.After(0, function()
-			local range = self.scrollFrame:GetVerticalScrollRange()
-			self.scrollFrame:SetVerticalScroll(range)
-		end)
-	end)
-
+	tinsert(UISpecialFrames, "FadeyDebugFrame")
+	frame:Hide()
 	return frame
 end
 
-function ns.ShowDebugWindow()
-	if not debugFrame then
-		debugFrame = CreateDebugWindow()
+local function ShowDebugWindow()
+	if not debugWindow then
+		debugWindow = BuildDebugWindow()
 	end
-	-- Refresh log text each time
-	local log = (ns.DB and ns.DB.debugLog) or {}
-	debugFrame.editBox:SetText(table.concat(log, "\n"))
-	debugFrame:Show()
+	-- Populate from saved log
+	local lines = (FadeyDB and FadeyDB.debugLog) or earlyBuffer
+	debugWindow.editBox:SetText(table.concat(lines, "\n"))
+	debugWindow:Show()
+end
+
+-- ── Slash commands ────────────────────────────────────────────────────────────
+
+SLASH_FADEY1 = "/fadey"
+SlashCmdList["FADEY"] = function(msg)
+	local cmd = msg and msg:match("^%s*(%S*)") or ""
+	cmd = cmd:lower()
+
+	if cmd == "debug" then
+		ShowDebugWindow()
+	elseif cmd == "clear" then
+		if FadeyDB then wipe(FadeyDB.debugLog) end
+		wipe(earlyBuffer)
+		ns.DebugLog("Log cleared.")
+	elseif cmd == "options" or cmd == "config" or cmd == "" then
+		ns.OpenOptions()
+	else
+		-- Use DEFAULT_CHAT_FRAME to give the user a hint without polluting the
+		-- debug log and without violating the no-print rule for diagnostic output.
+		DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffFadey|r: /fadey [options | debug | clear]")
+	end
 end

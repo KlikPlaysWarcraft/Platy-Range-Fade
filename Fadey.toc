@@ -1,0 +1,14 @@
+## Interface: 120001
+## Title: Fadey
+## Notes: Fades hostile nameplates when enemies are out of spell range.
+## Author: KlikPlaysWarcraft
+## Version: 0.1.0
+## SavedVariables: FadeyDB
+
+SpecData.lua
+Debug.lua
+DB.lua
+Range.lua
+Nameplates.lua
+Platy.lua
+Options.lua
